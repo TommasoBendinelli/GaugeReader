@@ -1,6 +1,9 @@
-# DISCONTINUATION OF PROJECT #
-This project will no longer be maintained by Intel.
-Intel has ceased development and contributions including, but not limited to, maintenance, bug fixes, new releases, or updates, to this project.
-Intel no longer accepts patches to this project.
-# python-cv-samples
-Python computer vision samples
+# How to use it
+* Install python3
+* Install pip3 install python3-opencv
+
+# How to run it
+* Run `python3 main.py`
+
+# Credits
+This codebase was based on Intel 

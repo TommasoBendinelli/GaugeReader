@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 #import paho.mqtt.client as mqtt
 import time
+from pathlib import Path 
+import pandas as pd
 
 def avg_circles(circles, b):
     avg_x=0
@@ -78,7 +80,7 @@ def computer_line_circle_intersection(line, circle_center, r):
 
     
 
-def calibrate_gauge(reference_image):
+def calibrate_gauge(img, debug=False):
     '''
         This function should be run using a test image in order to calibrate the range available to the dial as well as the
         units.  It works by first finding the center point and radius of the gauge.  Then it draws lines at hard coded intervals
@@ -90,11 +92,16 @@ def calibrate_gauge(reference_image):
         and the units (as a string).
     '''
 
-    img = cv2.imread(reference_image)
+    
+    
     height, width = img.shape[:2]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  #convert to gray
     #gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
+    # Downsample image for faster processing
+
+    if debug:
+        cv2.imwrite("debug/reference_gray.jpg", gray)
     # gray = cv2.medianBlur(gray, 5)
 
     #for testing, output gray image
@@ -108,10 +115,15 @@ def calibrate_gauge(reference_image):
     a, b, c = circles.shape
     x,y,r = avg_circles(circles, b)
 
+
     #draw center and circle
     cv2.circle(img, (x, y), r, (0, 0, 255), 3, cv2.LINE_AA)  # draw circle
     cv2.circle(img, (x, y), 2, (0, 255, 0), 3, cv2.LINE_AA)  # draw center of circle
 
+    if debug:
+        cv2.imwrite("debug/reference_image.jpg",img)
+
+    
     '''
     goes through the motion of a circle and sets x and y values based on the set separation spacing.  Also adds text to each
     line.  These lines and text labels serve as the reference point for the user to enter
@@ -146,11 +158,12 @@ def calibrate_gauge(reference_image):
         cv2.line(img, (int(p1[i][0]), int(p1[i][1])), (int(p2[i][0]), int(p2[i][1])),(0, 255, 0), 2)
         cv2.putText(img, '%s' %(int(i*separation)), (int(p_text[i][0]), int(p_text[i][1])), cv2.FONT_HERSHEY_SIMPLEX, 0.3,(0,0,0),1,cv2.LINE_AA)
 
-    cv2.imwrite("reference_image_with_lines.jpg", img)
+    if debug:
+        cv2.imwrite("debug/reference_image_with_lines.jpg", img)
 
     #get user input on min, max, values, and units
-    min_angle = 45
-    max_angle = 310
+    min_angle = 52
+    max_angle = 312
     min_value = 0
     max_value = 6
     units = "bar"
@@ -158,35 +171,38 @@ def calibrate_gauge(reference_image):
     circle_center = (x, y)
     return min_angle, max_angle, min_value, max_value, units, circle_center, r
 
-def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_center, r, gauge_number):    
-    gray2 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_center, r, gauge_number, debug=False):   
+    # Use the first channel as gray
+    gray2 = img[:,:,2]
+    #gray2 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # The clock hand is black, so we need to invert the image to get a white hand
     gray2 = cv2.bitwise_not(gray2)
 
     # Threshold the image to get only white pixels
-    ret, gray2 = cv2.threshold(gray2, 150, 255, cv2.THRESH_BINARY)
+    ret, dst2 = cv2.threshold(gray2, 180, 255, cv2.THRESH_BINARY)
+
     
 
     # for testing, show image after thresholding
-    dst2 = gray2
-    cv2.imwrite('gauge-%s-tempdst2.%s' % (gauge_number, "jpg"), dst2)
+    if debug:
+        cv2.imwrite('debug/gauge-%s-tempdst2.%s' % (gauge_number, "jpg"), dst2)
 
     # find lines
-    minLineLength = 10
+    minLineLength = 20
     maxLineGap = 0
-    lines = cv2.HoughLinesP(image=dst2, rho=3, theta=np.pi / 180, threshold=100,minLineLength=minLineLength, maxLineGap=0)  # rho is set to 3 to detect more lines, easier to get more then filter them out later
+    lines = cv2.HoughLinesP(image=dst2, rho=1, theta=np.pi / 180, threshold=100,minLineLength=minLineLength, maxLineGap=maxLineGap)  # rho is set to 3 to detect more lines, easier to get more then filter them out later
 
-    max_distance_from_center_tolerance = 1
-    minimum_line_length = 30
-    max_distance_from_center = 20
+    max_distance_line_from_center = 50
+    minimum_line_length = 160#140
+    max_distance_from_center = 200
     new_lines = []
     #for testing purposes, show all found lines
     candidate = None
     for i in range(0, len(lines)):
       for x1, y1, x2, y2 in lines[i]:
         line = [[x1, y1], [x2, y2]]
-        line_distnace_from_center_tolerance = distance_line_from_pt(line, circle_center)
+        line_distace_from_center_tolerance = distance_line_from_pt(line, circle_center)
         line_length = dist_2_pts(x1, y1, x2, y2)
         tmp1 = dist_2_pts(x1, y1, circle_center[0], circle_center[1])
         tmp2 = dist_2_pts(x2, y2, circle_center[0], circle_center[1])
@@ -194,7 +210,7 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
         
         
         distance_from_center = min(tmp1, tmp2)
-        if line_length > minimum_line_length and distance_from_center < max_distance_from_center and line_distnace_from_center_tolerance < max_distance_from_center_tolerance:
+        if line_length > minimum_line_length and distance_from_center < max_distance_from_center and line_distace_from_center_tolerance < max_distance_line_from_center:
             if candidate is None:
                 candidate = line
             else:
@@ -206,6 +222,13 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
                     candidate = line
     
     # Find the point that is more distant from the center
+    if not candidate:
+        for line in lines:
+            x1, y1, x2, y2 = line.squeeze()
+            cv2.line(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+        cv2.imwrite("debug/test_fin3.jpg", img)
+        return -1
     x1, y1 = candidate[0]
     x2, y2 = candidate[1]
     tmp1 = dist_2_pts(x1, y1, circle_center[0], circle_center[1])
@@ -238,7 +261,8 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
     # Show the intersection points
     cv2.circle(img, circle_center, r, (0, 0, 255), 3, cv2.LINE_AA)  # draw circle
     cv2.circle(img, (int(interesection[0][0]), int(interesection[0][1])), 2, (0, 255, 0), 3, cv2.LINE_AA)  # draw center of circle
-    cv2.imwrite("test_fin2.jpg", img)
+    if debug:
+        cv2.imwrite("debug/test_fin2.jpg", img)
     
     # Find the angle of the intersection point
     x_angle = interesection[0][0] - circle_center[0]
@@ -256,7 +280,8 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
     y_angle = highest_point[1] - circle_center[1]
     # Draw the highest point on the image
     cv2.circle(img, (int(highest_point[0]), int(highest_point[1])), 2, (0, 255, 0), 3, cv2.LINE_AA)  # draw center of circle
-    cv2.imwrite("test_fin2.jpg", img)
+    if debug:
+        cv2.imwrite("debug/test_fin3.jpg", img)
 
     # This is our 0 degree point
     x_angle = highest_point[0] - circle_center[0]
@@ -265,17 +290,6 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
     reference = np.rad2deg(res2)%360
     final_angle = res - reference + 180
 
-    # breakpoint()
-    # if x_angle > 0 and y_angle > 0:  #in quadrant I
-    #     final_angle = 270 - res
-    # if x_angle < 0 and y_angle > 0:  #in quadrant II
-    #     final_angle = 90 - res
-    # if x_angle < 0 and y_angle < 0:  #in quadrant III
-    #     final_angle = 90 - res
-    # if x_angle > 0 and y_angle < 0:  #in quadrant IV
-    #     final_angle = 270 - res
-
-    #print final_angle
 
     old_min = float(min_angle)
     old_max = float(max_angle)
@@ -288,19 +302,78 @@ def get_current_value(img, min_angle, max_angle, min_value, max_value, circle_ce
     old_range = (old_max - old_min)
     new_range = (new_max - new_min)
     new_value = (((old_value - old_min) * new_range) / old_range) + new_min
-
+    
     return new_value
 
-def main():
-    gauge_number = 1
-    reference_image = "reference_gauge.jpg"
-    # name the calibration image of your gauge 'gauge-#.jpg', for example 'gauge-5.jpg'.  It's written this way so you can easily try multiple images
-    min_angle, max_angle, min_value, max_value, units, circle_center, r = calibrate_gauge(reference_image)
 
+#
+
+def main():
+    crop_top_left = (800,1550)
+    crop_bottom_right = (2100,2800)
+    reference_image_path = "data/Manometer/reference.jpg"
+    reference_image = cv2.imread(reference_image_path)
+
+    measurement_folder = Path("data/Manometer/")
+    if crop_top_left is not None and crop_bottom_right is not None:
+        reference_image = reference_image[crop_top_left[0]:crop_bottom_right[0],crop_top_left[1]:crop_bottom_right[1]]
+        reference_image = cv2.resize(reference_image, (0, 0), fx=0.5, fy=0.5)
+    
+
+    
+    # name the calibration image of your gauge 'gauge-#.jpg', for example 'gauge-5.jpg'.  It's written this way so you can easily try multiple images
+    min_angle, max_angle, min_value, max_value, units, circle_center, r = calibrate_gauge(reference_image, debug=True)
+
+    result = {"path":[],"reading":[],"datetime":[]}
     #feed an image (or frame) to get the current value, based on the calibration, by default uses same image as calibration
-    img = cv2.imread('reference_gauge.jpg')
-    val = get_current_value(img, min_angle, max_angle, min_value, max_value, circle_center, r, gauge_number)
-    print("Current reading: %s %s" %(val, units))
+    for img_path in measurement_folder.glob("*.jpg"):
+        img = cv2.imread(str(img_path))
+        if crop_top_left is not None and crop_bottom_right is not None:
+            img = img[crop_top_left[0]:crop_bottom_right[0],crop_top_left[1]:crop_bottom_right[1]]
+            img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  #convert to gra
+        # height, width = img.shape[:2]
+        # circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 20, np.array([]), 100, 50, int(height*0.35), int(height*0.48))
+        # # average found circles, found it to be more accurate than trying to tune HoughCircles parameters to get just the right one
+        # # a, b, c = circles.shape
+        # # x,y,r = avg_circles(circles, b)
+        # # circle_center = (x,y)
+        val = get_current_value(img, min_angle, max_angle, min_value, max_value, circle_center, r, 1, debug=True)
+        print("Current reading: %s %s" %(val, units))
+        
+        
+        try:
+            date, hour = img_path.stem.split("_")[1:]
+        except:
+            continue
+
+        result["path"].append(img_path.name)
+        result["datetime"].append(date + " " + hour)
+        result["reading"].append(val)
+
+        # # Randomly breakpoint 
+        # if np.random.rand() < 0.1:
+        #     breakpoint()
+    # Sort by datetime
+    result = pd.DataFrame(result)
+    result = result.sort_values("datetime")
+    # convert to yyyy-mm-dd hh:mm:ss
+    result["datetime"] = pd.to_datetime(result["datetime"], format="%Y%m%d %H%M%S")
+    result = result.iloc[1:]
+    result["reading"] = result["reading"].round(2)
+    # Set the index to datetime
+    result = result.set_index("datetime")
+    result.to_csv("readings.csv")
+    result.to_excel("readings.xlsx")
+
+    # Create a plot of the readings x the time y the readings with plotly
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=result["datetime"], y=result["reading"]))
+    fig.update_layout(title="Manometer readings", xaxis_title="Datetime", yaxis_title="Reading")
+    fig.write_html("readings.html")
+    breakpoint()
+
 if __name__=='__main__':
     main()
    	

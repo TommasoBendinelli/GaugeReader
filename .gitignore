@@ -2,3 +2,5 @@ env/*
 data/*
 *.jpg
 examples/*
+readings.*
+.DS_STORE
