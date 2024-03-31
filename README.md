@@ -13,4 +13,4 @@ You might also need to adjust max_distance_line_from_center, minimum_line_length
 * Run `python3 main.py`
 
 # Credits
-This codebase was based on Intel 
+This codebase is based on Intel tutorial: https://www.intel.com/content/www/us/en/developer/articles/technical/analog-gauge-reader-using-opencv.html
