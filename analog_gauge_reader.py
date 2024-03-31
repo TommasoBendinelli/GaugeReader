@@ -332,12 +332,7 @@ def main():
             img = img[crop_top_left[0]:crop_bottom_right[0],crop_top_left[1]:crop_bottom_right[1]]
             img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  #convert to gra
-        # height, width = img.shape[:2]
-        # circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 20, np.array([]), 100, 50, int(height*0.35), int(height*0.48))
-        # # average found circles, found it to be more accurate than trying to tune HoughCircles parameters to get just the right one
-        # # a, b, c = circles.shape
-        # # x,y,r = avg_circles(circles, b)
-        # # circle_center = (x,y)
+
         val = get_current_value(img, min_angle, max_angle, min_value, max_value, circle_center, r, 1, debug=True)
         print("Current reading: %s %s" %(val, units))
         
